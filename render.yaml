@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: coffeeshop-ai-support
+    env: static
+    buildCommand: ""
+    staticPublishPath: ./
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
