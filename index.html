@@ -6,38 +6,71 @@
     <title>CoffeeShop AI Support</title>
     <meta
       name="description"
-      content="Виртуальный помощник для кофейни с поддержкой заказов и ответами клиентов"
+      content="Публичный веб-ассистент для кофейни с ответами по меню и заказам"
     />
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
     <main class="container">
       <section class="hero">
-        <p class="eyebrow">AI-помощник для кофейни</p>
+        <p class="eyebrow">Публичный AI-помощник для кофейни</p>
         <h1>CoffeeShop AI Support</h1>
         <p class="lead">
-          Проект, который помогает клиентам быстро получать ответы о меню,
-          заказах и работе кофейни.
+          Теперь проект доступен как веб-приложение для любого пользователя. Можно задавать вопросы, получать быстрые ответы и использовать сервис прямо в браузере.
         </p>
-        <a class="button" href="https://aistudio.google.com/apps/042efdc9-b7c4-4e73-bdcf-684eaf75d5b0?showPreview=true&showAssistant=true&project=gen-lang-client-0646761844" target="_blank" rel="noreferrer">
-          Открыть проект в Google AI Studio
-        </a>
       </section>
 
-      <section class="features">
-        <article>
-          <h2>⚡ Быстро</h2>
-          <p>Поддержка клиентов без ожидания ответа.</p>
-        </article>
-        <article>
-          <h2>☕ Удобно</h2>
-          <p>Помогает подобрать напитки и ответить на частые вопросы.</p>
-        </article>
-        <article>
-          <h2>🤖 Интеллектуально</h2>
-          <p>Основан на ИИ и может быть расширен под нужды бизнеса.</p>
-        </article>
+      <section class="chat-card">
+        <div class="chat-header">
+          <h2>Чат с помощником</h2>
+          <span class="status">Онлайн</span>
+        </div>
+        <div id="messages" class="messages">
+          <div class="message bot">Привет! Я помогу с меню, заказами и вопросами по кофейне.</div>
+        </div>
+        <form id="chat-form" class="chat-form">
+          <input id="message-input" type="text" placeholder="Напишите ваш вопрос..." autocomplete="off" required />
+          <button type="submit">Отправить</button>
+        </form>
       </section>
     </main>
+
+    <script>
+      const form = document.getElementById('chat-form');
+      const input = document.getElementById('message-input');
+      const messages = document.getElementById('messages');
+
+      function addMessage(text, sender) {
+        const div = document.createElement('div');
+        div.className = `message ${sender}`;
+        div.textContent = text;
+        messages.appendChild(div);
+        messages.scrollTop = messages.scrollHeight;
+      }
+
+      form.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const text = input.value.trim();
+        if (!text) return;
+
+        addMessage(text, 'user');
+        input.value = '';
+        addMessage('Подождите, я формирую ответ…', 'bot');
+
+        try {
+          const response = await fetch('/api/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ message: text })
+          });
+          const data = await response.json();
+          messages.lastChild.remove();
+          addMessage(data.reply || 'Извините, не удалось получить ответ.', 'bot');
+        } catch (error) {
+          messages.lastChild.remove();
+          addMessage('Сервис временно недоступен. Попробуйте позже.', 'bot');
+        }
+      });
+    </script>
   </body>
 </html>
