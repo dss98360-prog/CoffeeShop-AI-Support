@@ -19,17 +19,25 @@ const mimeTypes = {
   '.ico': 'image/x-icon'
 };
 
+function setCorsHeaders(res) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+}
+
 function sendJson(res, statusCode, payload) {
+  setCorsHeaders(res);
   res.writeHead(statusCode, { 'Content-Type': 'application/json; charset=utf-8' });
   res.end(JSON.stringify(payload));
 }
 
-function serveStatic(res, reqPath) {
+function serveStatic(res, reqPath, isHead = false) {
+  setCorsHeaders(res);
   const safeRoot = path.resolve(root);
   const normalizedPath = path.resolve(safeRoot, `.${reqPath}`);
   if (!normalizedPath.startsWith(safeRoot + path.sep) && normalizedPath !== safeRoot) {
     res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' });
-    res.end('Forbidden');
+    res.end(isHead ? undefined : 'Forbidden');
     return;
   }
 
@@ -37,13 +45,17 @@ function serveStatic(res, reqPath) {
   fs.readFile(filePath, (err, data) => {
     if (err) {
       res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
-      res.end('Not Found');
+      res.end(isHead ? undefined : 'Not Found');
       return;
     }
 
     const ext = path.extname(filePath).toLowerCase();
     const contentType = mimeTypes[ext] || 'application/octet-stream';
     res.writeHead(200, { 'Content-Type': contentType });
+    if (isHead) {
+      res.end();
+      return;
+    }
     res.end(data);
   });
 }
@@ -59,10 +71,10 @@ function readBody(req) {
 }
 
 function askGemini(prompt) {
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
     const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) {
-      resolve('Здравствуйте! Это публичный интерфейс CoffeeShop AI Support. Для живых ответов от Gemini добавьте GEMINI_API_KEY в переменные среды Render.');
+    if (!apiKey || apiKey === 'your_gemini_api_key_here') {
+      resolve('Здравствуйте! Это публичный интерфейс CoffeeShop AI Support. Чтобы включить живые ответы, добавьте рабочий GEMINI_API_KEY в переменные среды.');
       return;
     }
 
@@ -91,12 +103,14 @@ function askGemini(prompt) {
           const text = parsed?.candidates?.[0]?.content?.parts?.[0]?.text || 'Извините, не удалось получить ответ.';
           resolve(text);
         } catch (error) {
-          reject(error);
+          resolve('Извините, не удалось получить ответ от Gemini.');
         }
       });
     });
 
-    req.on('error', reject);
+    req.on('error', () => {
+      resolve('Сервис Gemini временно недоступен. Попробуйте позже.');
+    });
     req.write(payload);
     req.end();
   });
@@ -105,7 +119,14 @@ function askGemini(prompt) {
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
 
-  if (req.method === 'GET' && url.pathname === '/health') {
+  if (req.method === 'OPTIONS') {
+    setCorsHeaders(res);
+    res.writeHead(204);
+    res.end();
+    return;
+  }
+
+  if ((req.method === 'GET' || req.method === 'HEAD') && url.pathname === '/health') {
     sendJson(res, 200, { status: 'ok' });
     return;
   }
@@ -127,7 +148,7 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  serveStatic(res, url.pathname);
+  serveStatic(res, url.pathname, req.method === 'HEAD');
 });
 
 server.listen(port, host, () => {
