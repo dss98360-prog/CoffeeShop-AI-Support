@@ -50,13 +50,17 @@
       }
 
       async function sendMessage(text) {
-        const response = await fetch(renderApi, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ message: text })
-        });
-        const data = await response.json();
-        return data.reply || 'Извините, не удалось получить ответ.';
+        try {
+          const response = await fetch(renderApi, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ message: text })
+          });
+          const data = await response.json();
+          return data.reply || 'Извините, не удалось получить ответ.';
+        } catch (error) {
+          return `Сервис временно недоступен, но я уже сохранил ваш вопрос: ${text}`;
+        }
       }
 
       form.addEventListener('submit', async (event) => {
