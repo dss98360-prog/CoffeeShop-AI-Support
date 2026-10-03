@@ -16,7 +16,7 @@
         <p class="eyebrow">Публичный AI-помощник для кофейни</p>
         <h1>CoffeeShop AI Support</h1>
         <p class="lead">
-          Теперь проект доступен как веб-приложение для любого пользователя. Можно задавать вопросы, получать быстрые ответы и использовать сервис прямо в браузере.
+          Теперь проект доступен как веб-приложение для любого пользователя. Можно задавать вопросы, получать ответы по меню и заказам.
         </p>
       </section>
 
@@ -39,7 +39,7 @@
       const form = document.getElementById('chat-form');
       const input = document.getElementById('message-input');
       const messages = document.getElementById('messages');
-      const renderApi = 'https://coffeeshop-ai-support.onrender.com/api/chat';
+      const renderApi = '/api/chat';
 
       function addMessage(text, sender) {
         const div = document.createElement('div');
