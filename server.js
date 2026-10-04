@@ -81,6 +81,12 @@ function readBody(req) {
   });
 }
 
+function sleep(ms) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
 async function askGemini(prompt) {
   const apiKey = process.env.GEMINI_API_KEY;
 
@@ -147,7 +153,7 @@ async function askGemini(prompt) {
     'Вопрос пользователя: ' +
     prompt;
 
-    const payload = JSON.stringify({
+  const payload = JSON.stringify({
     contents: [
       {
         role: 'user',
@@ -172,9 +178,7 @@ async function askGemini(prompt) {
     }
   };
 
-  const MAX_ATTEMPTS = 3;
-
-  async function makeGeminiRequest(attempt = 1) {
+  function makeRequest() {
     return new Promise((resolve, reject) => {
       const req = https.request(options, (res) => {
         let body = '';
@@ -183,78 +187,60 @@ async function askGemini(prompt) {
           body += chunk;
         });
 
-        res.on('end', async () => {
+        res.on('end', () => {
+          let parsed;
+
           try {
-            const parsed = JSON.parse(body);
-
-            // При временной перегрузке Gemini повторяем запрос.
-            if (res.statusCode === 503 && attempt < MAX_ATTEMPTS) {
-              const delayMs = attempt === 1 ? 1000 : 2000;
-
-              console.warn(
-                `Gemini API 503. Retry ${attempt + 1}/${MAX_ATTEMPTS} in ${delayMs} ms`
-              );
-
-              await new Promise((resolveDelay) =>
-                setTimeout(resolveDelay, delayMs)
-              );
-
-              try {
-                const result = await makeGeminiRequest(attempt + 1);
-                resolve(result);
-              } catch (error) {
-                reject(error);
-              }
-
-              return;
-            }
-
-            if (
-              res.statusCode < 200 ||
-              res.statusCode >= 300
-            ) {
-              console.error(
-                'Gemini API error:',
-                res.statusCode,
-                body
-              );
-
-              reject(
-                new Error(
-                  `Gemini API returned HTTP ${res.statusCode}`
-                )
-              );
-              return;
-            }
-
-            if (parsed.error) {
-              console.error(
-                'Gemini API error:',
-                JSON.stringify(parsed.error)
-              );
-
-              reject(
-                new Error(
-                  parsed.error.message ||
-                    'Gemini API error'
-                )
-              );
-              return;
-            }
-
-            const text =
-              parsed?.candidates?.[0]?.content?.parts?.[0]
-                ?.text ||
-              'Извините, не удалось получить ответ.';
-
-            resolve(text);
+            parsed = JSON.parse(body);
           } catch (error) {
             console.error(
               'Gemini response parsing error:',
               error.message
             );
             reject(error);
+            return;
           }
+
+          if (
+            res.statusCode < 200 ||
+            res.statusCode >= 300
+          ) {
+            console.error(
+              'Gemini API error:',
+              res.statusCode,
+              body
+            );
+
+            const error = new Error(
+              `Gemini API returned HTTP ${res.statusCode}`
+            );
+
+            error.statusCode = res.statusCode;
+            reject(error);
+            return;
+          }
+
+          if (parsed.error) {
+            console.error(
+              'Gemini API error:',
+              JSON.stringify(parsed.error)
+            );
+
+            reject(
+              new Error(
+                parsed.error.message ||
+                  'Gemini API error'
+              )
+            );
+            return;
+          }
+
+          const text =
+            parsed?.candidates?.[0]?.content?.parts?.[0]
+              ?.text ||
+            'Извините, не удалось получить ответ.';
+
+          resolve(text);
         });
       });
 
@@ -264,7 +250,40 @@ async function askGemini(prompt) {
     });
   }
 
-  return makeGeminiRequest();
+  const maxAttempts = 3;
+
+  for (
+    let attempt = 1;
+    attempt <= maxAttempts;
+    attempt++
+  ) {
+    try {
+      return await makeRequest();
+    } catch (error) {
+      const isTemporaryError =
+        error.statusCode === 503;
+
+      if (
+        !isTemporaryError ||
+        attempt === maxAttempts
+      ) {
+        throw error;
+      }
+
+      const delayMs =
+        attempt === 1 ? 1000 : 2000;
+
+      console.warn(
+        `Gemini API 503. Retry ${attempt + 1}/${maxAttempts} in ${delayMs} ms`
+      );
+
+      await sleep(delayMs);
+    }
+  }
+
+  throw new Error(
+    'Gemini API request failed after retries'
+  );
 }
 
 function logQuestionAsync(prompt) {
@@ -357,11 +376,10 @@ const server = http.createServer(
 
         const reply = await askGemini(prompt);
 
-        // Ответ пользователю отправляется сразу.
         sendJson(res, 200, { reply });
 
-        // Логирование запускается отдельно
-        // и не блокирует ответ пользователю.
+        // Логирование выполняется после ответа
+        // и не блокирует пользователя.
         logQuestionAsync(prompt);
       } catch (error) {
         console.error(
@@ -370,8 +388,9 @@ const server = http.createServer(
         );
 
         if (!res.headersSent) {
-          sendJson(res, 400, {
-            error: 'Неверный формат запроса'
+          sendJson(res, 500, {
+            error:
+              'Сервис временно недоступен. Попробуйте позже.'
           });
         }
       }
