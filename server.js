@@ -21,30 +21,48 @@ const mimeTypes = {
 };
 
 function sendJson(res, statusCode, payload) {
-  res.writeHead(statusCode, { 'Content-Type': 'application/json; charset=utf-8' });
+  res.writeHead(statusCode, {
+    'Content-Type': 'application/json; charset=utf-8'
+  });
   res.end(JSON.stringify(payload));
 }
 
 function serveStatic(res, reqPath) {
   const safeRoot = path.resolve(root);
   const normalizedPath = path.resolve(safeRoot, `.${reqPath}`);
-  if (!normalizedPath.startsWith(safeRoot + path.sep) && normalizedPath !== safeRoot) {
-    res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' });
+
+  if (
+    !normalizedPath.startsWith(safeRoot + path.sep) &&
+    normalizedPath !== safeRoot
+  ) {
+    res.writeHead(403, {
+      'Content-Type': 'text/plain; charset=utf-8'
+    });
     res.end('Forbidden');
     return;
   }
 
-  const filePath = reqPath === '/' ? path.join(safeRoot, 'index.html') : normalizedPath;
+  const filePath =
+    reqPath === '/'
+      ? path.join(safeRoot, 'index.html')
+      : normalizedPath;
+
   fs.readFile(filePath, (err, data) => {
     if (err) {
-      res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+      res.writeHead(404, {
+        'Content-Type': 'text/plain; charset=utf-8'
+      });
       res.end('Not Found');
       return;
     }
 
     const ext = path.extname(filePath).toLowerCase();
-    const contentType = mimeTypes[ext] || 'application/octet-stream';
-    res.writeHead(200, { 'Content-Type': contentType });
+    const contentType =
+      mimeTypes[ext] || 'application/octet-stream';
+
+    res.writeHead(200, {
+      'Content-Type': contentType
+    });
     res.end(data);
   });
 }
@@ -52,46 +70,63 @@ function serveStatic(res, reqPath) {
 function readBody(req) {
   return new Promise((resolve) => {
     let data = '';
+
     req.on('data', (chunk) => {
       data += chunk;
     });
-    req.on('end', () => resolve(data));
+
+    req.on('end', () => {
+      resolve(data);
+    });
   });
 }
 
 async function askGemini(prompt) {
   const apiKey = process.env.GEMINI_API_KEY;
+
   if (!apiKey) {
     return 'Здравствуйте! Это публичный интерфейс CoffeeShop AI Support. Для живых ответов от Gemini добавьте GEMINI_API_KEY в переменные окружения.';
   }
 
-  // Get relevant knowledge base entries
-  const spreadsheetId = process.env.GOOGLE_SHEETS_SPREADSHEET_ID;
+  const spreadsheetId =
+    process.env.GOOGLE_SHEETS_SPREADSHEET_ID;
+
   let knowledgeContext = '';
 
   if (spreadsheetId) {
     try {
-      const relevantEntries = await knowledgeBase.findRelevantEntries(prompt, spreadsheetId);
+      const relevantEntries =
+        await knowledgeBase.findRelevantEntries(
+          prompt,
+          spreadsheetId
+        );
+
       if (relevantEntries.length > 0) {
-        knowledgeContext = 'Информация из базы знаний магазина:\n';
+        knowledgeContext =
+          'Информация из базы знаний магазина:\n';
+
         relevantEntries.forEach((entry) => {
-          knowledgeContext += `- Вопрос: ${entry.question}\n  Ответ: ${entry.answer}\n`;
+          knowledgeContext +=
+            `- Вопрос: ${entry.question}\n` +
+            `  Ответ: ${entry.answer}\n`;
         });
+
         knowledgeContext += '\n';
       }
     } catch (error) {
-      console.error('Error fetching knowledge base:', error.message);
-      // Continue without knowledge base on error
+      console.error(
+        'Error fetching knowledge base:',
+        error.message
+      );
     }
   }
 
-  // Build enhanced prompt with agent instructions, knowledge context, and user question
   const agentInstructions = `Ты — AI-ассистент «Кофейный сомелье» онлайн-магазина обжарщика кофе.
 Помогаешь подобрать кофе, помол и способ заваривания, объясняешь подписку, хранение, доставку, оплату и возврат.
 
 ГРАНИЦЫ:
 Работай только по тематике магазина, кофе, кофейного оборудования и обслуживания клиентов.
-Не давай медицинских рекомендаций о кофеине и влиянии кофе на здоровье..
+Не давай медицинских рекомендаций о кофеине и влиянии кофе на здоровье.
 Если вопрос требует медицинской консультации — корректно сообщи, что это вне компетенции ассистента.
 По вопросам ассортимента, подписки, хранения, доставки, оплаты, возврата и других условий магазина используй только информацию из предоставленной базы знаний.
 Не добавляй от себя факты, условия, сроки, ограничения или возможности, которых нет в базе знаний.
@@ -105,16 +140,32 @@ async function askGemini(prompt) {
 При недостатке информации задавай уточняющий вопрос.
 Когда уместно, предлагай конкретный следующий шаг.`;
 
-  const enhancedPrompt = agentInstructions + '\n\n' + knowledgeContext + 'Вопрос пользователя: ' + prompt;
+  const enhancedPrompt =
+    agentInstructions +
+    '\n\n' +
+    knowledgeContext +
+    'Вопрос пользователя: ' +
+    prompt;
 
   return new Promise((resolve, reject) => {
     const payload = JSON.stringify({
-      contents: [{ role: 'user', parts: [{ text: enhancedPrompt }] }]
+      contents: [
+        {
+          role: 'user',
+          parts: [
+            {
+              text: enhancedPrompt
+            }
+          ]
+        }
+      ]
     });
 
     const options = {
       hostname: 'generativelanguage.googleapis.com',
-      path: `/v1beta/models/gemini-3.8-flash:generateContent?key=${apiKey}`,
+      path:
+        `/v1beta/models/gemini-3.8-flash:generateContent` +
+        `?key=${apiKey}`,
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -124,35 +175,61 @@ async function askGemini(prompt) {
 
     const req = https.request(options, (res) => {
       let body = '';
+
       res.on('data', (chunk) => {
         body += chunk;
       });
+
       res.on('end', () => {
-  try {
-    const parsed = JSON.parse(body);
+        try {
+          const parsed = JSON.parse(body);
 
-    // Показываем реальную ошибку Gemini в Render Logs
-    if (res.statusCode < 200 || res.statusCode >= 300) {
-      console.error('Gemini API error:', res.statusCode, body);
-      reject(new Error(`Gemini API returned HTTP ${res.statusCode}`));
-      return;
-    }
+          if (
+            res.statusCode < 200 ||
+            res.statusCode >= 300
+          ) {
+            console.error(
+              'Gemini API error:',
+              res.statusCode,
+              body
+            );
 
-    if (parsed.error) {
-      console.error('Gemini API error:', JSON.stringify(parsed.error));
-      reject(new Error(parsed.error.message || 'Gemini API error'));
-      return;
-    }
+            reject(
+              new Error(
+                `Gemini API returned HTTP ${res.statusCode}`
+              )
+            );
+            return;
+          }
 
-    const text =
-      parsed?.candidates?.[0]?.content?.parts?.[0]?.text ||
-      'Извините, не удалось получить ответ.';
+          if (parsed.error) {
+            console.error(
+              'Gemini API error:',
+              JSON.stringify(parsed.error)
+            );
 
-    resolve(text);
-  } catch (error) {
-    console.error('Gemini response parsing error:', error.message);
-    reject(error);
-  }
+            reject(
+              new Error(
+                parsed.error.message ||
+                  'Gemini API error'
+              )
+            );
+            return;
+          }
+
+          const text =
+            parsed?.candidates?.[0]?.content?.parts?.[0]
+              ?.text ||
+            'Извините, не удалось получить ответ.';
+
+          resolve(text);
+        } catch (error) {
+          console.error(
+            'Gemini response parsing error:',
+            error.message
+          );
+          reject(error);
+        }
       });
     });
 
@@ -162,72 +239,124 @@ async function askGemini(prompt) {
   });
 }
 
-const server = http.createServer(async (req, res) => {
-  const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
-
-  if (req.method === 'GET' && url.pathname === '/health') {
-    sendJson(res, 200, { status: 'ok' });
-    return;
-  }
-
-  if (req.method === 'POST' && url.pathname === '/api/chat') {
-    const body = await readBody(req);
+function logQuestionAsync(prompt) {
+  setImmediate(() => {
     try {
-      const parsed = JSON.parse(body);
-      const prompt = parsed.message || '';
-      if (!prompt) {
-        sendJson(res, 400, { error: 'Введите сообщение' });
+      const webhookUrl =
+        process.env.LOG_WEBHOOK_URL;
+
+      if (!webhookUrl) {
         return;
       }
-      const reply = await askGemini(prompt);
 
-// Отправляем ответ пользователю сразу
-sendJson(res, 200, { reply });
+      const logData = JSON.stringify({
+        timestamp: new Date().toLocaleString('ru-RU'),
+        question: prompt,
+        category: 'Общие вопросы',
+        source: 'Из базы (Google Sheets)',
+        sessionDuration: '00:30'
+      });
 
-// Логирование выполняем отдельно и не задерживаем ответ пользователю
-const webhookUrl = process.env.LOG_WEBHOOK_URL;
+      const webhook = new URL(webhookUrl);
 
-if (webhookUrl) {
-  const logData = JSON.stringify({
-    timestamp: new Date().toLocaleString('ru-RU'),
-    question: prompt,
-    category: 'Общие вопросы',
-    source: 'Из базы (Google Sheets)',
-    sessionDuration: '00:30'
-  });
+      const logRequest = https.request(
+        {
+          hostname: webhook.hostname,
+          path: webhook.pathname + webhook.search,
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Content-Length':
+              Buffer.byteLength(logData)
+          }
+        },
+        (logResponse) => {
+          logResponse.resume();
+        }
+      );
 
-  try {
-    const webhook = new URL(webhookUrl);
+      logRequest.on('error', (error) => {
+        console.error(
+          'Log webhook error:',
+          error.message
+        );
+      });
 
-    const logRequest = https.request({
-      hostname: webhook.hostname,
-      path: webhook.pathname + webhook.search,
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Content-Length': Buffer.byteLength(logData)
-      }
-    });
-
-    logRequest.on('error', (error) => {
-      console.error('Log webhook error:', error.message);
-    });
-
-    logRequest.write(logData);
-    logRequest.end();
-  } catch (error) {
-    console.error('Log webhook setup error:', error.message);
-  }
-}
+      logRequest.write(logData);
+      logRequest.end();
     } catch (error) {
-      sendJson(res, 400, { error: 'Неверный формат запроса' });
+      console.error(
+        'Log webhook setup error:',
+        error.message
+      );
     }
-    return;
-  }
+  });
+}
 
-  serveStatic(res, url.pathname);
-});
+const server = http.createServer(
+  async (req, res) => {
+    const url = new URL(
+      req.url,
+      `http://${req.headers.host || 'localhost'}`
+    );
+
+    if (
+      req.method === 'GET' &&
+      url.pathname === '/health'
+    ) {
+      sendJson(res, 200, {
+        status: 'ok'
+      });
+      return;
+    }
+
+    if (
+      req.method === 'POST' &&
+      url.pathname === '/api/chat'
+    ) {
+      const body = await readBody(req);
+
+      try {
+        const parsed = JSON.parse(body);
+        const prompt = parsed.message || '';
+
+        if (!prompt) {
+          sendJson(res, 400, {
+            error: 'Введите сообщение'
+          });
+          return;
+        }
+
+        const reply = await askGemini(prompt);
+
+        // Ответ пользователю отправляется сразу.
+        sendJson(res, 200, { reply });
+
+        // Логирование запускается отдельно
+        // и не блокирует ответ пользователю.
+        logQuestionAsync(prompt);
+      } catch (error) {
+        console.error(
+          'Chat request error:',
+          error.message
+        );
+
+        if (!res.headersSent) {
+          sendJson(res, 400, {
+            error: 'Неверный формат запроса'
+          });
+        }
+      }
+
+      return;
+    }
+
+    serveStatic(res, url.pathname);
+  }
+);
 
 server.listen(port, host, () => {
-  console.log(`Server running at http://${host}:${port}/`);
+  console.log(
+    `Server running at http://${host}:${port}/`
+  );
 });
