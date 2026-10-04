@@ -91,7 +91,7 @@ async function askGemini(prompt) {
 
 ГРАНИЦЫ:
 Работай только по тематике магазина, кофе, кофейного оборудования и обслуживания клиентов.
-Не давай медицинских рекомендаций о кофеине и вли��нии кофе на здоровье.
+Не давай медицинских рекомендаций о кофеине и влиянии кофе на здоровье..
 Если вопрос требует медицинской консультации — корректно сообщи, что это вне компетенции ассистента.
 Не выдумывай ассортимент, цены, условия доставки, оплаты, возврата и другие факты магазина.
 Если информации нет в базе знаний — прямо сообщи об этом либо дай только общий ответ, чётко не выдавая его за информацию магазина.
@@ -125,13 +125,31 @@ async function askGemini(prompt) {
         body += chunk;
       });
       res.on('end', () => {
-        try {
-          const parsed = JSON.parse(body);
-          const text = parsed?.candidates?.[0]?.content?.parts?.[0]?.text || 'Извините, не удалось получить ответ.';
-          resolve(text);
-        } catch (error) {
-          reject(error);
-        }
+  try {
+    const parsed = JSON.parse(body);
+
+    // Показываем реальную ошибку Gemini в Render Logs
+    if (res.statusCode < 200 || res.statusCode >= 300) {
+      console.error('Gemini API error:', res.statusCode, body);
+      reject(new Error(`Gemini API returned HTTP ${res.statusCode}`));
+      return;
+    }
+
+    if (parsed.error) {
+      console.error('Gemini API error:', JSON.stringify(parsed.error));
+      reject(new Error(parsed.error.message || 'Gemini API error'));
+      return;
+    }
+
+    const text =
+      parsed?.candidates?.[0]?.content?.parts?.[0]?.text ||
+      'Извините, не удалось получить ответ.';
+
+    resolve(text);
+  } catch (error) {
+    console.error('Gemini response parsing error:', error.message);
+    reject(error);
+  }
       });
     });
 
