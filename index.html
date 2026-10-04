@@ -10,13 +10,15 @@
     />
     <link rel="stylesheet" href="styles.css" />
   </head>
+
   <body>
     <main class="container">
       <section class="hero">
         <p class="eyebrow">Публичный AI-помощник для кофейни</p>
         <h1>CoffeeShop AI Support</h1>
         <p class="lead">
-          Теперь проект доступен как веб-приложение для любого пользователя. Можно задавать вопросы, получать ответы по меню и заказам.
+          Теперь проект доступен как веб-приложение для любого пользователя.
+          Можно задавать вопросы, получать ответы по меню и заказам.
         </p>
       </section>
 
@@ -25,11 +27,21 @@
           <h2>Чат с помощником</h2>
           <span class="status">Онлайн</span>
         </div>
+
         <div id="messages" class="messages">
-          <div class="message bot">Привет! Я помогу с меню, заказами и вопросами по кофейне.</div>
+          <div class="message bot">
+            Привет! Я помогу с меню, заказами и вопросами по кофейне.
+          </div>
         </div>
+
         <form id="chat-form" class="chat-form">
-          <input id="message-input" type="text" placeholder="Напишите ваш вопрос..." autocomplete="off" required />
+          <input
+            id="message-input"
+            type="text"
+            placeholder="Напишите ваш вопрос..."
+            autocomplete="off"
+            required
+          />
           <button type="submit">Отправить</button>
         </form>
       </section>
@@ -47,34 +59,76 @@
         div.textContent = text;
         messages.appendChild(div);
         messages.scrollTop = messages.scrollHeight;
+        return div;
       }
 
       async function sendMessage(text) {
         const response = await fetch(renderApi, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ message: text })
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            message: text
+          })
         });
-        const data = await response.json();
-        return data.reply || 'Извините, не удалось получить ответ.';
+
+        const rawText = await response.text();
+
+        let data;
+
+        try {
+          data = JSON.parse(rawText);
+        } catch (error) {
+          throw new Error(
+            `Сервер вернул некорректный ответ: ${rawText}`
+          );
+        }
+
+        if (!response.ok) {
+          throw new Error(
+            data.error || `Ошибка сервера HTTP ${response.status}`
+          );
+        }
+
+        if (!data.reply) {
+          throw new Error('В ответе сервера отсутствует поле reply');
+        }
+
+        return data.reply;
       }
 
       form.addEventListener('submit', async (event) => {
         event.preventDefault();
+
         const text = input.value.trim();
-        if (!text) return;
+
+        if (!text) {
+          return;
+        }
 
         addMessage(text, 'user');
         input.value = '';
-        addMessage('Подождите, я формирую ответ…', 'bot');
+
+        const waitingMessage = addMessage(
+          'Подождите, я формирую ответ…',
+          'bot'
+        );
 
         try {
           const reply = await sendMessage(text);
-          messages.lastChild.remove();
+
+          waitingMessage.remove();
           addMessage(reply, 'bot');
         } catch (error) {
-          messages.lastChild.remove();
-          addMessage('Сервис временно недоступен. Попробуйте позже.', 'bot');
+          console.error('Chat frontend error:', error);
+
+          waitingMessage.remove();
+
+          addMessage(
+            'Сервис временно недоступен. Попробуйте позже.',
+            'bot'
+          );
         }
       });
     </script>
