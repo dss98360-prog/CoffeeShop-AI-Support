@@ -164,7 +164,7 @@ async function askGemini(prompt) {
     const options = {
       hostname: 'generativelanguage.googleapis.com',
       path:
-        `/v1beta/models/gemini-3.8-flash:generateContent` +
+        `/v1beta/models/gemini-3.6-flash:generateContent` +
         `?key=${apiKey}`,
       method: 'POST',
       headers: {
