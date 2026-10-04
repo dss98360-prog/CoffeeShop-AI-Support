@@ -2,6 +2,7 @@ const http = require('http');
 const https = require('https');
 const fs = require('fs');
 const path = require('path');
+const knowledgeBase = require('./knowledgeBase');
 
 const port = Number(process.env.PORT) || 3000;
 const host = '0.0.0.0';
@@ -58,16 +59,54 @@ function readBody(req) {
   });
 }
 
-function askGemini(prompt) {
-  return new Promise((resolve, reject) => {
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) {
-      resolve('Здравствуйте! Это публичный интерфейс CoffeeShop AI Support. Для живых ответов от Gemini добавьте GEMINI_API_KEY в переменные среды Render.');
-      return;
-    }
+async function askGemini(prompt) {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    return 'Здравствуйте! Это публичный интерфейс CoffeeShop AI Support. Для живых ответов от Gemini добавьте GEMINI_API_KEY в переменные окружения.';
+  }
 
+  // Get relevant knowledge base entries
+  const spreadsheetId = process.env.GOOGLE_SHEETS_SPREADSHEET_ID;
+  let knowledgeContext = '';
+
+  if (spreadsheetId) {
+    try {
+      const relevantEntries = await knowledgeBase.findRelevantEntries(prompt, spreadsheetId);
+      if (relevantEntries.length > 0) {
+        knowledgeContext = 'Информация из базы знаний магазина:\n';
+        relevantEntries.forEach((entry) => {
+          knowledgeContext += `- Вопрос: ${entry.question}\n  Ответ: ${entry.answer}\n`;
+        });
+        knowledgeContext += '\n';
+      }
+    } catch (error) {
+      console.error('Error fetching knowledge base:', error.message);
+      // Continue without knowledge base on error
+    }
+  }
+
+  // Build enhanced prompt with agent instructions, knowledge context, and user question
+  const agentInstructions = `Ты — AI-ассистент «Кофейный сомелье» онлайн-магазина обжарщика кофе.
+Помогаешь подобрать кофе, помол и способ заваривания, объясняешь подписку, хранение, доставку, оплату и возврат.
+
+ГРАНИЦЫ:
+Работай только по тематике магазина, кофе, кофейного оборудования и обслуживания клиентов.
+Не давай медицинских рекомендаций о кофеине и вли��нии кофе на здоровье.
+Если вопрос требует медицинской консультации — корректно сообщи, что это вне компетенции ассистента.
+Не выдумывай ассортимент, цены, условия доставки, оплаты, возврата и другие факты магазина.
+Если информации нет в базе знаний — прямо сообщи об этом либо дай только общий ответ, чётко не выдавая его за информацию магазина.
+
+СТИЛЬ:
+Обращайся к пользователю на «Вы».
+Отвечай понятно, доброжелательно и лаконично.
+При недостатке информации задавай уточняющий вопрос.
+Когда уместно, предлагай конкретный следующий шаг.`;
+
+  const enhancedPrompt = agentInstructions + '\n\n' + knowledgeContext + 'Вопрос пользователя: ' + prompt;
+
+  return new Promise((resolve, reject) => {
     const payload = JSON.stringify({
-      contents: [{ role: 'user', parts: [{ text: prompt }] }]
+      contents: [{ role: 'user', parts: [{ text: enhancedPrompt }] }]
     });
 
     const options = {
