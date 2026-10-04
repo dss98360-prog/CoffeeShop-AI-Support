@@ -180,7 +180,45 @@ const server = http.createServer(async (req, res) => {
         return;
       }
       const reply = await askGemini(prompt);
-      sendJson(res, 200, { reply });
+
+// Отправляем ответ пользователю сразу
+sendJson(res, 200, { reply });
+
+// Логирование выполняем отдельно и не задерживаем ответ пользователю
+const webhookUrl = process.env.LOG_WEBHOOK_URL;
+
+if (webhookUrl) {
+  const logData = JSON.stringify({
+    timestamp: new Date().toLocaleString('ru-RU'),
+    question: prompt,
+    category: 'Общие вопросы',
+    source: 'Из базы (Google Sheets)',
+    sessionDuration: '00:30'
+  });
+
+  try {
+    const webhook = new URL(webhookUrl);
+
+    const logRequest = https.request({
+      hostname: webhook.hostname,
+      path: webhook.pathname + webhook.search,
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(logData)
+      }
+    });
+
+    logRequest.on('error', (error) => {
+      console.error('Log webhook error:', error.message);
+    });
+
+    logRequest.write(logData);
+    logRequest.end();
+  } catch (error) {
+    console.error('Log webhook setup error:', error.message);
+  }
+}
     } catch (error) {
       sendJson(res, 400, { error: 'Неверный формат запроса' });
     }
