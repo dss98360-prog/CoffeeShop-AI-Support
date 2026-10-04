@@ -147,96 +147,124 @@ async function askGemini(prompt) {
     'Вопрос пользователя: ' +
     prompt;
 
-  return new Promise((resolve, reject) => {
     const payload = JSON.stringify({
-      contents: [
-        {
-          role: 'user',
-          parts: [
-            {
-              text: enhancedPrompt
-            }
-          ]
-        }
-      ]
-    });
-
-    const options = {
-      hostname: 'generativelanguage.googleapis.com',
-      path:
-        `/v1beta/models/gemini-3.6-flash:generateContent` +
-        `?key=${apiKey}`,
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Content-Length': Buffer.byteLength(payload)
+    contents: [
+      {
+        role: 'user',
+        parts: [
+          {
+            text: enhancedPrompt
+          }
+        ]
       }
-    };
-
-    const req = https.request(options, (res) => {
-      let body = '';
-
-      res.on('data', (chunk) => {
-        body += chunk;
-      });
-
-      res.on('end', () => {
-        try {
-          const parsed = JSON.parse(body);
-
-          if (
-            res.statusCode < 200 ||
-            res.statusCode >= 300
-          ) {
-            console.error(
-              'Gemini API error:',
-              res.statusCode,
-              body
-            );
-
-            reject(
-              new Error(
-                `Gemini API returned HTTP ${res.statusCode}`
-              )
-            );
-            return;
-          }
-
-          if (parsed.error) {
-            console.error(
-              'Gemini API error:',
-              JSON.stringify(parsed.error)
-            );
-
-            reject(
-              new Error(
-                parsed.error.message ||
-                  'Gemini API error'
-              )
-            );
-            return;
-          }
-
-          const text =
-            parsed?.candidates?.[0]?.content?.parts?.[0]
-              ?.text ||
-            'Извините, не удалось получить ответ.';
-
-          resolve(text);
-        } catch (error) {
-          console.error(
-            'Gemini response parsing error:',
-            error.message
-          );
-          reject(error);
-        }
-      });
-    });
-
-    req.on('error', reject);
-    req.write(payload);
-    req.end();
+    ]
   });
+
+  const options = {
+    hostname: 'generativelanguage.googleapis.com',
+    path:
+      `/v1beta/models/gemini-3.6-flash:generateContent` +
+      `?key=${apiKey}`,
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Content-Length': Buffer.byteLength(payload)
+    }
+  };
+
+  const MAX_ATTEMPTS = 3;
+
+  async function makeGeminiRequest(attempt = 1) {
+    return new Promise((resolve, reject) => {
+      const req = https.request(options, (res) => {
+        let body = '';
+
+        res.on('data', (chunk) => {
+          body += chunk;
+        });
+
+        res.on('end', async () => {
+          try {
+            const parsed = JSON.parse(body);
+
+            // При временной перегрузке Gemini повторяем запрос.
+            if (res.statusCode === 503 && attempt < MAX_ATTEMPTS) {
+              const delayMs = attempt === 1 ? 1000 : 2000;
+
+              console.warn(
+                `Gemini API 503. Retry ${attempt + 1}/${MAX_ATTEMPTS} in ${delayMs} ms`
+              );
+
+              await new Promise((resolveDelay) =>
+                setTimeout(resolveDelay, delayMs)
+              );
+
+              try {
+                const result = await makeGeminiRequest(attempt + 1);
+                resolve(result);
+              } catch (error) {
+                reject(error);
+              }
+
+              return;
+            }
+
+            if (
+              res.statusCode < 200 ||
+              res.statusCode >= 300
+            ) {
+              console.error(
+                'Gemini API error:',
+                res.statusCode,
+                body
+              );
+
+              reject(
+                new Error(
+                  `Gemini API returned HTTP ${res.statusCode}`
+                )
+              );
+              return;
+            }
+
+            if (parsed.error) {
+              console.error(
+                'Gemini API error:',
+                JSON.stringify(parsed.error)
+              );
+
+              reject(
+                new Error(
+                  parsed.error.message ||
+                    'Gemini API error'
+                )
+              );
+              return;
+            }
+
+            const text =
+              parsed?.candidates?.[0]?.content?.parts?.[0]
+                ?.text ||
+              'Извините, не удалось получить ответ.';
+
+            resolve(text);
+          } catch (error) {
+            console.error(
+              'Gemini response parsing error:',
+              error.message
+            );
+            reject(error);
+          }
+        });
+      });
+
+      req.on('error', reject);
+      req.write(payload);
+      req.end();
+    });
+  }
+
+  return makeGeminiRequest();
 }
 
 function logQuestionAsync(prompt) {
